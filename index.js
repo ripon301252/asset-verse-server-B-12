@@ -245,6 +245,23 @@ async function run() {
       }
     });
 
+    // Get single user by id
+    app.get("/users/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!ObjectId.isValid(id))
+          return res.status(400).json({ message: "Invalid user ID" });
+
+        const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        res.json(user);
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Failed to fetch user" });
+      }
+    });
+
     // Delete user
     app.delete("/users/:id", async (req, res) => {
       try {
@@ -441,7 +458,6 @@ async function run() {
         res.status(500).json({ message: "Server Error" });
       }
     });
-
 
     // backend/routes/requests.js (bar)
     app.get("/api/dashboard/bar", async (req, res) => {
