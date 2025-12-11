@@ -218,14 +218,65 @@ async function run() {
       }
     });
 
+    // Return asset
+    app.put("/asset_requests/:id/return", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await assetRequestCollection.updateOne(
+          { _id: new ObjectId(id), status: "approved" },
+          { $set: { status: "returned" } }
+        );
+
+        if (result.matchedCount === 0)
+          return res
+            .status(404)
+            .json({ message: "Asset not found or not approved" });
+
+        res.json({ success: true, modifiedCount: result.modifiedCount });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Return failed" });
+      }
+    });
+
     // Delete request
+    // app.delete("/asset_requests/:id", async (req, res) => {
+    //   try {
+    //     const id = req.params.id;
+    //     const result = await assetRequestCollection.deleteOne({
+    //       _id: new ObjectId(id),
+    //     });
+    //     res.json({ message: "Request deleted", result });
+    //   } catch (err) {
+    //     res.status(500).json({ message: "Delete failed" });
+    //   }
+    // });
+
+    // Delete request
+    // app.delete("/asset_requests/:id", async (req, res) => {
+    //   try {
+    //     const id = req.params.id;
+    //     const result = await assetRequestCollection.deleteOne({
+    //       _id: new ObjectId(id),
+    //     });
+    //     res.json({ deletedCount: result.deletedCount }); // ✅
+    //   } catch (err) {
+    //     res.status(500).json({ message: "Delete failed" });
+    //   }
+    // });
+
     app.delete("/asset_requests/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const result = await assetRequestCollection.deleteOne({
           _id: new ObjectId(id),
         });
-        res.json({ message: "Request deleted", result });
+
+        res.json({
+          message:
+            result.deletedCount > 0 ? "Request deleted" : "Request not found",
+          deletedCount: result.deletedCount,
+        });
       } catch (err) {
         res.status(500).json({ message: "Delete failed" });
       }
@@ -367,19 +418,6 @@ async function run() {
       } catch (err) {
         console.error("Insert Error:", err);
         res.status(500).json({ message: err.message });
-      }
-    });
-
-    // Delete request
-    app.delete("/asset_requests/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await assetRequestCollection.deleteOne({
-          _id: new ObjectId(id),
-        });
-        res.json({ deletedCount: result.deletedCount }); // ✅
-      } catch (err) {
-        res.status(500).json({ message: "Delete failed" });
       }
     });
 
