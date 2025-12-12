@@ -61,6 +61,7 @@ async function run() {
       try {
         const asset = req.body;
         asset.name = asset.name.toLowerCase().trim();
+        asset.company = asset.company?.toLowerCase().trim();
         const result = await assetCollection.insertOne(asset);
         res.status(201).json(result);
       } catch (err) {
@@ -69,17 +70,16 @@ async function run() {
     });
 
     // Update Asset
-    // Update Asset
     app.put("/assets/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        const { name, quantity, image, type } = req.body;
+        const { name, quantity, image, type, companyName } = req.body;
 
         if (!ObjectId.isValid(id)) {
           return res.status(400).json({ message: "Invalid asset ID" });
         }
 
-        if (!name || quantity == null || !type) {
+        if (!name || quantity == null || !type || !companyName) {
           return res.status(400).json({ message: "Missing required fields" });
         }
 
@@ -88,7 +88,8 @@ async function run() {
             name: name.toLowerCase().trim(),
             quantity: Number(quantity),
             image: image || null,
-            type, // type include করা হলো
+            type,
+            companyName: companyName.toLowerCase().trim(),
           },
         };
 
@@ -218,53 +219,48 @@ async function run() {
       }
     });
 
-    // Return asset
+   
+
+    // Return asset and update quantity
     app.put("/asset_requests/:id/return", async (req, res) => {
       try {
         const id = req.params.id;
-        const result = await assetRequestCollection.updateOne(
-          { _id: new ObjectId(id), status: "approved" },
+
+        // Find the request first
+        const request = await assetRequestCollection.findOne({
+          _id: new ObjectId(id),
+          status: "approved",
+        });
+        if (!request) {
+          return res
+            .status(404)
+            .json({ message: "Asset request not found or not approved" });
+        }
+
+        // Update the asset request status to 'returned'
+        const updateRequest = await assetRequestCollection.updateOne(
+          { _id: new ObjectId(id) },
           { $set: { status: "returned" } }
         );
 
-        if (result.matchedCount === 0)
-          return res
-            .status(404)
-            .json({ message: "Asset not found or not approved" });
+        // Increment the original asset's quantity
+        const updateAsset = await assetCollection.updateOne(
+          { _id: new ObjectId(request.assetId) },
+          { $inc: { quantity: request.quantity } }
+        );
 
-        res.json({ success: true, modifiedCount: result.modifiedCount });
+        res.json({
+          success: true,
+          modifiedRequest: updateRequest.modifiedCount,
+          modifiedAsset: updateAsset.modifiedCount,
+        });
       } catch (err) {
         console.error(err);
         res.status(500).json({ message: "Return failed" });
       }
     });
 
-    // Delete request
-    // app.delete("/asset_requests/:id", async (req, res) => {
-    //   try {
-    //     const id = req.params.id;
-    //     const result = await assetRequestCollection.deleteOne({
-    //       _id: new ObjectId(id),
-    //     });
-    //     res.json({ message: "Request deleted", result });
-    //   } catch (err) {
-    //     res.status(500).json({ message: "Delete failed" });
-    //   }
-    // });
-
-    // Delete request
-    // app.delete("/asset_requests/:id", async (req, res) => {
-    //   try {
-    //     const id = req.params.id;
-    //     const result = await assetRequestCollection.deleteOne({
-    //       _id: new ObjectId(id),
-    //     });
-    //     res.json({ deletedCount: result.deletedCount }); // ✅
-    //   } catch (err) {
-    //     res.status(500).json({ message: "Delete failed" });
-    //   }
-    // });
-
+   
     app.delete("/asset_requests/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -337,51 +333,25 @@ async function run() {
         res.status(500).json({ role: "user" });
       }
     });
-
-    // Update user
-    // app.put("/users/:id", async (req, res) => {
-    //   try {
-    //     const id = req.params.id;
-    //     const { name, email, role, status, team } = req.body;
-
-    //     const updateDoc = {
-    //       $set: { name, email, role, status },
-    //     };
-
-    //     // যদি team change করতে চাও
-    //     if (team) updateDoc.$set.team = team;
-
-    //     const result = await usersCollection.updateOne(
-    //       { _id: new ObjectId(id) },
-    //       updateDoc
-    //     );
-
-    //     if (result.matchedCount === 0)
-    //       return res.status(404).json({ message: "User not found" });
-
-    //     res.json({ modifiedCount: result.modifiedCount });
-    //   } catch (err) {
-    //     console.error(err);
-    //     res.status(500).json({ message: "Update failed" });
-    //   }
-    // });
+    
 
     // Update user
     app.put("/users/:id", async (req, res) => {
       try {
         const id = req.params.id;
 
-        // এখানে photoURL add করা হলো
-        const { name, email, role, status, team, photoURL } = req.body;
+        
+        const { name, email, role, status, team, photoURL, companyName } =
+          req.body;
 
         const updateDoc = {
-          $set: { name, email, role, status },
+          $set: { name, email, role, status, companyName },
         };
 
-        // যদি team থাকে
+        
         if (team) updateDoc.$set.team = team;
 
-        // 🔥 গুরুত্বপূর্ণ — ছবি আপডেট করো যদি নতুন URL আসে
+        
         if (photoURL) updateDoc.$set.photoURL = photoURL;
 
         const result = await usersCollection.updateOne(
@@ -401,22 +371,40 @@ async function run() {
 
     app.post("/users", async (req, res) => {
       try {
-        const user = req.body;
+        const { name, email, role, photoURL } = req.body;
 
-        if (!user.name || !user.email || !user.role) {
+        if (!name || !email || !role) {
           return res.status(400).json({ message: "Missing required fields" });
         }
 
-        const result = await usersCollection.insertOne(user);
+        // Check if user already exists
+        const existingUser = await usersCollection.findOne({ email });
 
-        console.log("Inserted User Result:", result); // <-- এখানে console এ দেখাও
+        if (existingUser) {
+          // Optionally update some fields if you want
+          return res.status(200).json({
+            success: true,
+            message: "User already exists",
+            userId: existingUser._id,
+          });
+        }
+
+        const newUser = {
+          name,
+          email,
+          role,
+          photoURL: photoURL || null,
+        };
+
+        const result = await usersCollection.insertOne(newUser);
 
         res.status(201).json({
           success: true,
-          insertedId: result.insertedId,
+          message: "User added successfully",
+          userId: result.insertedId,
         });
       } catch (err) {
-        console.error("Insert Error:", err);
+        console.error("User save error:", err);
         res.status(500).json({ message: err.message });
       }
     });
@@ -451,7 +439,7 @@ async function run() {
     });
 
     // Verify Payment & Update HR Package (dummy DB)
-    let HR_DB = []; // Demo database
+    let HR_DB = []; 
 
     app.get("/api/stripe/success", async (req, res) => {
       const { session_id, hrId, packageType } = req.query;
